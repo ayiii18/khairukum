@@ -1,20 +1,13 @@
 import { Pool, type PoolClient, type QueryResultRow } from 'pg';
+import { getEnv } from '@/lib/env';
 
 declare global {
   var pgPool: Pool | undefined;
 }
 
 function createPool(): Pool {
-  const connectionString = process.env.DATABASE_URL;
-
-  if (!connectionString) {
-    throw new Error(
-      'DATABASE_URL is not set. Copy .env.example to .env.local and fill in your credentials.'
-    );
-  }
-
   return new Pool({
-    connectionString,
+    connectionString: getEnv().DATABASE_URL,
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
@@ -26,6 +19,18 @@ export const pool: Pool = global.pgPool ?? createPool();
 if (process.env.NODE_ENV !== 'production') {
   global.pgPool = pool;
 }
+
+pool.on('error', (error) => {
+  // Idle client errors should never crash the process.
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      scope: 'db.pool',
+      message: error.message,
+      timestamp: new Date().toISOString(),
+    })
+  );
+});
 
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,

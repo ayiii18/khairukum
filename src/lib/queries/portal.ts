@@ -75,15 +75,7 @@ export async function getParentPortalData(identifier: string): Promise<ParentPor
     );
 
     if (!parent) {
-      // Fallback: pick first parent for demo preview if identifier not found
-      const fallback = await queryOne<{ id: string; user_id: string; full_name: string; phone: string }>(
-        `SELECT p.id, p.user_id, p.full_name, u.phone
-         FROM parents p
-         JOIN users u ON u.id = p.user_id
-         LIMIT 1`
-      );
-      if (!fallback) return null;
-      return getParentPortalData(fallback.id);
+      return null;
     }
 
     // 2. Fetch children associated with this parent
@@ -309,15 +301,7 @@ export async function getTeacherPortalData(identifier: string): Promise<TeacherP
     );
 
     if (!teacher) {
-      // Fallback: pick first teacher for demo
-      const fallback = await queryOne<{ id: string; user_id: string; full_name: string; phone: string }>(
-        `SELECT t.id, t.user_id, t.full_name, u.phone
-         FROM teachers t
-         JOIN users u ON u.id = t.user_id
-         LIMIT 1`
-      );
-      if (!fallback) return null;
-      return getTeacherPortalData(fallback.id);
+      return null;
     }
 
     // 2. Fetch halaqat assigned to this teacher
@@ -376,7 +360,10 @@ export async function getTeacherPortalData(identifier: string): Promise<TeacherP
 
       for (const st of studentsRows) {
         // Today's attendance
-        const todayAtt = await queryOne<{ status: any; note: string | null }>(
+        const todayAtt = await queryOne<{
+          status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | null;
+          note: string | null;
+        }>(
           `SELECT status, note FROM attendance 
            WHERE student_enrollment_id = $1 AND attendance_date = $2`,
           [st.enrollment_id, todayDate]

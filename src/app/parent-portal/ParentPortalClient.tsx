@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   BookOpen,
-  Users,
   CalendarCheck,
   Brain,
   MessageSquare,
@@ -13,27 +12,36 @@ import {
   LogOut,
   Building2,
   GraduationCap,
-  Clock,
-  Phone,
-  CheckCircle2,
   AlertCircle,
-  HelpCircle,
-  FileText,
   User,
-  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { submitParentExcuse } from '@/lib/actions/portal';
 import { logoutUser } from '@/lib/actions/auth';
+import { errorMessage } from '@/lib/logger';
 import { ParentPortalPayload, ParentChildData } from '@/lib/queries/portal';
+
+type ParentTab = 'overview' | 'attendance' | 'memorization' | 'notes' | 'excuse';
+
+const PARENT_TABS: {
+  id: ParentTab;
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+}[] = [
+  { id: 'overview', label: 'مسيرة الحفظ والإنجاز', icon: Brain },
+  { id: 'attendance', label: 'سجل الحضور والغياب', icon: CalendarCheck },
+  { id: 'memorization', label: 'سجل التسميع والمراجعة', icon: BookOpen },
+  { id: 'notes', label: 'ملاحظات المعلم', icon: MessageSquare },
+  { id: 'excuse', label: 'تقديم عذر غياب', icon: Send },
+];
 
 export default function ParentPortalClient({ data }: { data: ParentPortalPayload }) {
   const router = useRouter();
   const toast = useToast();
 
   const [selectedChildIndex, setSelectedChildIndex] = useState(0);
-  const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'memorization' | 'notes' | 'excuse'>('overview');
+  const [activeTab, setActiveTab] = useState<ParentTab>('overview');
 
   // Excuse Form State
   const [excuseDate, setExcuseDate] = useState(new Date().toISOString().slice(0, 10));
@@ -66,9 +74,9 @@ export default function ParentPortalClient({ data }: { data: ParentPortalPayload
       } else {
         toast.error('خطأ', res.error || 'تعذر إرسال العذر');
       }
-    } catch (err: any) {
+    } catch (err) {
       setIsSubmittingExcuse(false);
-      toast.error('خطأ', err.message);
+      toast.error('خطأ', errorMessage(err));
     }
   };
 
@@ -208,19 +216,13 @@ export default function ParentPortalClient({ data }: { data: ParentPortalPayload
 
         {/* Portal Tabs Navigation */}
         <div className="flex items-center gap-2 border-b border-[#E2DBD0] pb-2 overflow-x-auto">
-          {[
-            { id: 'overview', label: 'مسيرة الحفظ والإنجاز', icon: Brain },
-            { id: 'attendance', label: 'سجل الحضور والغياب', icon: CalendarCheck },
-            { id: 'memorization', label: 'سجل التسميع والمراجعة', icon: BookOpen },
-            { id: 'notes', label: 'ملاحظات المعلم', icon: MessageSquare },
-            { id: 'excuse', label: 'تقديم عذر غياب', icon: Send },
-          ].map((tab) => {
+          {PARENT_TABS.map((tab) => {
             const TabIcon = tab.icon;
             const isSelected = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all shrink-0 ${
                   isSelected
                     ? 'bg-charcoal-800 text-white shadow-xs font-bold'

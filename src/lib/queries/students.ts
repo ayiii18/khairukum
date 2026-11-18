@@ -50,8 +50,43 @@ const STUDENTS_WITH_CONTEXT = `
   ) att ON TRUE
 `;
 
-export const getStudents = cache(async (): Promise<StudentRow[]> => {
-  return query<StudentRow>(`${STUDENTS_WITH_CONTEXT} ORDER BY s.full_name`);
+export interface StudentFilters {
+  search?: string;
+  mosque?: string;
+  halaqa?: string;
+}
+
+/**
+ * Filters run in SQL so the database does the work and only the rows the
+ * administrator asked for cross the network. The client keeps instant
+ * in-memory quick filters on the (already narrowed) result set.
+ */
+export const getStudents = cache(async (filters: StudentFilters = {}): Promise<StudentRow[]> => {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters.search?.trim()) {
+    params.push(`%${filters.search.trim()}%`);
+    const i = params.length;
+    conditions.push(
+      `(s.full_name ILIKE $${i} OR s.phone ILIKE $${i} OR p.full_name ILIKE $${i})`
+    );
+  }
+  if (filters.mosque?.trim()) {
+    params.push(filters.mosque.trim());
+    conditions.push(`m.name = $${params.length}`);
+  }
+  if (filters.halaqa?.trim()) {
+    params.push(filters.halaqa.trim());
+    conditions.push(`h.name = $${params.length}`);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  return query<StudentRow>(
+    `${STUDENTS_WITH_CONTEXT} ${where} ORDER BY s.full_name LIMIT 1000`,
+    params
+  );
 });
 
 export const getStudentById = cache(async (id: string): Promise<StudentRow | null> => {
@@ -65,15 +100,21 @@ export const getMosqueOptions = cache(async () => {
 });
 
 export const getHalaqatOptions = cache(async () => {
-  return query<{ id: string; name: string; mosque_name: string; student_count: number }>(
+  return query<{
+    id: string;
+    name: string;
+    mosque_id: string;
+    mosque_name: string;
+    student_count: number;
+  }>(
     `
-    SELECT h.id, h.name, m.name AS mosque_name, COUNT(se.id)::int AS student_count
+    SELECT h.id, h.name, h.mosque_id, m.name AS mosque_name, COUNT(se.id)::int AS student_count
     FROM halaqat h
     JOIN mosques m ON m.id = h.mosque_id
     LEFT JOIN student_enrollments se
       ON se.halaqa_id = h.id AND se.status = 'ACTIVE'
     WHERE h.is_active = TRUE
-    GROUP BY h.id, h.name, m.name
+    GROUP BY h.id, h.name, h.mosque_id, m.name
     ORDER BY m.name, h.name
   `
   );

@@ -1,7 +1,10 @@
 'use server';
 
-import { query, transaction } from '@/lib/db';
+import { transaction } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { requireAdmin } from '@/lib/auth/access';
+import { generateTempPassword, TEMP_PASSWORD_HINT } from '@/lib/auth/passwords';
+import { logger } from '@/lib/logger';
 
 export interface ActionResponse {
   success: boolean;
@@ -12,6 +15,8 @@ export interface ActionResponse {
 }
 
 export async function addStudent(formData: FormData): Promise<ActionResponse> {
+  await requireAdmin();
+
   const full_name = formData.get('full_name')?.toString()?.trim() || '';
   const gender = (formData.get('gender')?.toString()?.trim() || 'MALE') as 'MALE' | 'FEMALE';
   const rawPhone = formData.get('phone')?.toString()?.trim() || '';
@@ -63,6 +68,9 @@ export async function addStudent(formData: FormData): Promise<ActionResponse> {
   }
 
   try {
+    let studentTempPassword: string | null = null;
+    let parentTempPassword: string | null = null;
+
     const studentId = await transaction(async (client) => {
       let studentUserId: string | null = null;
 
@@ -85,10 +93,11 @@ export async function addStudent(formData: FormData): Promise<ActionResponse> {
           }
           studentUserId = existingUserId;
         } else {
+          studentTempPassword = generateTempPassword();
           const studentUserRes = await client.query(
-            `INSERT INTO users (phone, password_hash, role, is_active)
-             VALUES ($1, $2, 'STUDENT', TRUE) RETURNING id`,
-            [phone, 'default_hash_123']
+            `INSERT INTO users (phone, password_hash, role, is_active, must_change_password)
+             VALUES ($1, crypt($2, gen_salt('bf')), 'STUDENT', TRUE, TRUE) RETURNING id`,
+            [phone, studentTempPassword]
           );
           studentUserId = studentUserRes.rows[0].id;
         }
@@ -120,10 +129,11 @@ export async function addStudent(formData: FormData): Promise<ActionResponse> {
           parentId = parentRes.rows[0].id;
         }
       } else {
+        parentTempPassword = generateTempPassword();
         const pUserRes = await client.query(
-          `INSERT INTO users (phone, password_hash, role, is_active)
-           VALUES ($1, $2, 'PARENT', TRUE) RETURNING id`,
-          [parent_phone, 'default_hash_123']
+          `INSERT INTO users (phone, password_hash, role, is_active, must_change_password)
+           VALUES ($1, crypt($2, gen_salt('bf')), 'PARENT', TRUE, TRUE) RETURNING id`,
+          [parent_phone, parentTempPassword]
         );
         pUserId = pUserRes.rows[0].id;
       }
@@ -158,21 +168,36 @@ export async function addStudent(formData: FormData): Promise<ActionResponse> {
     });
 
     revalidatePath('/students');
+    revalidatePath('/parents');
+    revalidatePath('/halaqat');
+
+    const credentials: string[] = [];
+    if (studentTempPassword) {
+      credentials.push(`الطالب: ${studentTempPassword}`);
+    }
+    if (parentTempPassword) {
+      credentials.push(`ولي الأمر: ${parentTempPassword}`);
+    }
+
     return {
       success: true,
-      message: 'تم إضافة الطالب وربطه بالحلقة وولي الأمر بنجاح!',
+      message:
+        credentials.length > 0
+          ? `تم إضافة الطالب وربطه بالحلقة وولي الأمر بنجاح. كلمات المرور المؤقتة — ${credentials.join(' | ')}. ${TEMP_PASSWORD_HINT}`
+          : 'تم إضافة الطالب وربطه بالحلقة وولي الأمر بنجاح!',
       studentId,
     };
-  } catch (err: any) {
-    console.error('Error adding student:', err);
-    let errorMsg = err.message || 'حدث خطأ غير متوقع أثناء حفظ البيانات.';
-    if (err.code === '23505') {
-      if (err.constraint?.includes('phone')) {
+  } catch (err) {
+    const pgError = err as { message?: string; code?: string; constraint?: string };
+    logger.error('students.add-failed', { message: pgError.message });
+    let errorMsg = pgError.message || 'حدث خطأ غير متوقع أثناء حفظ البيانات.';
+    if (pgError.code === '23505') {
+      if (pgError.constraint?.includes('phone')) {
         errorMsg = 'رقم الهاتف المدخل مستخدم مسبقاً في النظام.';
       } else {
         errorMsg = 'توجد بيانات مكررة مسجلة مسبقاً في النظام.';
       }
-    } else if (err.code === '22001') {
+    } else if (pgError.code === '22001') {
       errorMsg = 'أحد الحقول المدخلة يتجاوز الطول المسموح به في قاعدة البيانات.';
     }
 

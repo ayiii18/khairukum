@@ -1,9 +1,13 @@
 'use server';
 
-import { query, transaction } from '@/lib/db';
+import { query, queryOne, transaction } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { requireAdmin } from '@/lib/auth/access';
+import { generateTempPassword, TEMP_PASSWORD_HINT } from '@/lib/auth/passwords';
 
 export async function addTeacher(formData: FormData) {
+  await requireAdmin();
+
   const full_name = formData.get('full_name')?.toString()?.trim();
   const rawPhone = formData.get('phone')?.toString()?.trim();
   const phone = rawPhone ? rawPhone.replace(/\s+/g, '') : '';
@@ -21,6 +25,8 @@ export async function addTeacher(formData: FormData) {
   }
 
   // Use a transaction to create user, teacher, and optionally assign halaqa
+  const tempPassword = generateTempPassword();
+
   await transaction(async (client) => {
     // 1. Check if phone is already registered
     const existing = await client.query(`SELECT id FROM users WHERE phone = $1`, [phone]);
@@ -30,9 +36,9 @@ export async function addTeacher(formData: FormData) {
 
     // 2. Create User
     const userRes = await client.query(
-      `INSERT INTO users (phone, password_hash, role, is_active)
-       VALUES ($1, $2, 'TEACHER', $3) RETURNING id`,
-      [phone, 'default_hash_123', is_active]
+      `INSERT INTO users (phone, password_hash, role, is_active, must_change_password)
+       VALUES ($1, crypt($2, gen_salt('bf')), 'TEACHER', $3, TRUE) RETURNING id`,
+      [phone, tempPassword, is_active]
     );
     const userId = userRes.rows[0].id;
 
@@ -58,9 +64,16 @@ export async function addTeacher(formData: FormData) {
 
   revalidatePath('/teachers');
   revalidatePath('/halaqat');
+  return {
+    success: true,
+    tempPassword,
+    message: `تم إضافة المعلم. كلمة المرور المؤقتة: ${tempPassword}. ${TEMP_PASSWORD_HINT}`,
+  };
 }
 
 export async function updateTeacher(id: string, formData: FormData) {
+  await requireAdmin();
+
   const full_name = formData.get('full_name')?.toString()?.trim();
   const rawPhone = formData.get('phone')?.toString()?.trim();
   const phone = rawPhone ? rawPhone.replace(/\s+/g, '') : '';
@@ -115,6 +128,16 @@ export async function updateTeacher(id: string, formData: FormData) {
 }
 
 export async function deleteTeacher(id: string) {
+  await requireAdmin();
+
+  const assigned = await queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM teacher_halaqas WHERE teacher_id = $1`,
+    [id]
+  );
+  if ((assigned?.count ?? 0) > 0) {
+    throw new Error('لا يمكن حذف المعلم لارتباطه بحلقات. أزل التكليفات أولاً.');
+  }
+
   await transaction(async (client) => {
     const res = await client.query(`SELECT user_id FROM teachers WHERE id = $1`, [id]);
     const userId = res.rows[0]?.user_id;
@@ -136,6 +159,7 @@ export async function deleteTeacher(id: string) {
 }
 
 export async function assignTeacherToHalaqa(teacherId: string, halaqaId: string, isPrimary: boolean) {
+  await requireAdmin();
   if (isPrimary) {
     // Unset any existing primary for this teacher
     await query(`UPDATE teacher_halaqas SET is_primary = FALSE WHERE teacher_id = $1`, [teacherId]);
@@ -156,6 +180,8 @@ export async function assignTeacherToHalaqa(teacherId: string, halaqaId: string,
 }
 
 export async function removeTeacherFromHalaqa(teacherId: string, halaqaId: string) {
+  await requireAdmin();
+
   await query(
     `DELETE FROM teacher_halaqas WHERE teacher_id = $1 AND halaqa_id = $2`,
     [teacherId, halaqaId]
@@ -167,6 +193,8 @@ export async function removeTeacherFromHalaqa(teacherId: string, halaqaId: strin
 }
 
 export async function setPrimaryHalaqa(teacherId: string, halaqaId: string) {
+  await requireAdmin();
+
   await transaction(async (client) => {
     await client.query(
       `UPDATE teacher_halaqas SET is_primary = FALSE WHERE teacher_id = $1`,

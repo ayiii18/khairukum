@@ -1,5 +1,5 @@
 import { cache } from 'react';
-import { query, queryOne } from '@/lib/db';
+import { query } from '@/lib/db';
 
 export type HalaqaRow = {
   id: string;
@@ -11,7 +11,7 @@ export type HalaqaRow = {
   primary_teacher_name: string | null;
 };
 
-const HALAQAT_WITH_CONTEXT = `
+const HALAQAT_BASE = `
   SELECT 
     h.id,
     h.name,
@@ -19,15 +19,28 @@ const HALAQAT_WITH_CONTEXT = `
     h.description,
     h.is_active,
     COUNT(DISTINCT se.student_id)::int AS students_count,
-    MAX(CASE WHEN th.is_primary = TRUE THEN t.full_name ELSE NULL END) AS primary_teacher_name
+    COALESCE(
+      MAX(CASE WHEN th.is_primary = TRUE THEN t.full_name END),
+      MAX(t.full_name)
+    ) AS primary_teacher_name
   FROM halaqat h
   JOIN mosques m ON m.id = h.mosque_id
   LEFT JOIN student_enrollments se ON se.halaqa_id = h.id AND se.status = 'ACTIVE'
   LEFT JOIN teacher_halaqas th ON th.halaqa_id = h.id
   LEFT JOIN teachers t ON t.id = th.teacher_id
-  GROUP BY h.id, m.name
 `;
 
 export const getHalaqat = cache(async (): Promise<HalaqaRow[]> => {
-  return query<HalaqaRow>(`${HALAQAT_WITH_CONTEXT} ORDER BY m.name, h.name`);
+  return query<HalaqaRow>(
+    `${HALAQAT_BASE} GROUP BY h.id, m.name ORDER BY m.name, h.name`
+  );
 });
+
+export const getHalaqatByMosque = cache(
+  async (mosqueId: string): Promise<HalaqaRow[]> => {
+    return query<HalaqaRow>(
+      `${HALAQAT_BASE} WHERE h.mosque_id = $1 GROUP BY h.id, m.name ORDER BY h.name`,
+      [mosqueId]
+    );
+  }
+);

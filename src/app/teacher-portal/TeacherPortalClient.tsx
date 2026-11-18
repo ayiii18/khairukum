@@ -9,39 +9,47 @@ import {
   CalendarCheck,
   Brain,
   MessageSquare,
-  Send,
   LogOut,
   Building2,
   GraduationCap,
-  CheckCircle2,
-  Clock,
-  Phone,
   AlertCircle,
-  Sparkles,
-  Check,
-  X,
-  FileText,
-  User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { recordTeacherAttendance, recordTeacherMemorization, sendTeacherNoteToParent } from '@/lib/actions/portal';
 import { logoutUser } from '@/lib/actions/auth';
+import { errorMessage } from '@/lib/logger';
 import { TeacherPortalPayload, TeacherPortalHalaqa } from '@/lib/queries/portal';
+
+type TeacherTab = 'attendance' | 'memorization' | 'students' | 'notes';
+type NoteCategory = 'EDUCATIONAL' | 'BEHAVIORAL' | 'FOLLOW_UP' | 'ADMINISTRATIVE';
+type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
+type AttendanceEntry = { status: AttendanceStatus; note: string };
+
+const TEACHER_TABS: {
+  id: TeacherTab;
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+}[] = [
+  { id: 'attendance', label: 'التحضير السريع للطلاب', icon: CalendarCheck },
+  { id: 'memorization', label: 'رصد الحفظ والمراجعة', icon: Brain },
+  { id: 'students', label: 'قائمة طلاب الحلقة وأولياء الأمور', icon: Users },
+  { id: 'notes', label: 'إرسال ملاحظة لولي الأمر', icon: MessageSquare },
+];
 
 export default function TeacherPortalClient({ data }: { data: TeacherPortalPayload }) {
   const router = useRouter();
   const toast = useToast();
 
   const [selectedHalaqaIndex, setSelectedHalaqaIndex] = useState(0);
-  const [activeTab, setActiveTab] = useState<'attendance' | 'memorization' | 'students' | 'notes'>('attendance');
+  const [activeTab, setActiveTab] = useState<TeacherTab>('attendance');
 
   const currentHalaqa: TeacherPortalHalaqa | undefined = data.halaqat[selectedHalaqaIndex] || data.halaqat[0];
 
   // Attendance Form State
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().slice(0, 10));
-  const [attendanceState, setAttendanceState] = useState<Record<string, { status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'; note: string }>>(() => {
-    const initial: Record<string, any> = {};
+  const [attendanceState, setAttendanceState] = useState<Record<string, AttendanceEntry>>(() => {
+    const initial: Record<string, AttendanceEntry> = {};
     currentHalaqa?.students.forEach((st) => {
       initial[st.enrollment_id] = {
         status: st.today_attendance.status || 'PRESENT',
@@ -63,7 +71,7 @@ export default function TeacherPortalClient({ data }: { data: TeacherPortalPaylo
 
   // Note to Parent Form State
   const [noteStudentId, setNoteStudentId] = useState(currentHalaqa?.students[0]?.student_id || '');
-  const [noteCategory, setNoteCategory] = useState<'EDUCATIONAL' | 'BEHAVIORAL' | 'FOLLOW_UP' | 'ADMINISTRATIVE'>('EDUCATIONAL');
+  const [noteCategory, setNoteCategory] = useState<NoteCategory>('EDUCATIONAL');
   const [noteContent, setNoteContent] = useState('');
   const [isSendingNote, setIsSendingNote] = useState(false);
 
@@ -82,29 +90,29 @@ export default function TeacherPortalClient({ data }: { data: TeacherPortalPaylo
     setIsSavingAttendance(true);
 
     try {
-      const records = Object.entries(attendanceState).map(([enrollment_id, state]) => ({
-        student_enrollment_id: enrollment_id,
-        date: attendanceDate,
-        status: state.status,
-        note: state.note || undefined,
-      }));
+      const results = await Promise.all(
+        Object.entries(attendanceState).map(([enrollmentId, state]) =>
+          recordTeacherAttendance({
+            enrollment_id: enrollmentId,
+            attendance_date: attendanceDate,
+            status: state.status,
+            note: state.note || undefined,
+          })
+        )
+      );
 
-      const res = await recordTeacherAttendance({
-        halaqa_id: currentHalaqa.id,
-        date: attendanceDate,
-        records,
-      });
+      const failed = results.find((result) => !result.success);
 
       setIsSavingAttendance(false);
-      if (res.success) {
+      if (!failed) {
         toast.success('تم حفظ التحضير', `تم تسجيل حضور طلاب حلقة ${currentHalaqa.name} بنجاح.`);
         router.refresh();
       } else {
-        toast.error('خطأ', res.error || 'تعذر حفظ التحضير');
+        toast.error('خطأ', failed.error || 'تعذر حفظ التحضير');
       }
-    } catch (err: any) {
+    } catch (err) {
       setIsSavingAttendance(false);
-      toast.error('خطأ', err.message);
+      toast.error('خطأ', errorMessage(err));
     }
   };
 
@@ -122,7 +130,7 @@ export default function TeacherPortalClient({ data }: { data: TeacherPortalPaylo
     setIsSavingMemo(true);
     try {
       const res = await recordTeacherMemorization({
-        student_enrollment_id: memoStudentId,
+        enrollment_id: memoStudentId,
         surah: surahName.trim(),
         from_ayah: Number(fromAyah),
         to_ayah: Number(toAyah),
@@ -138,9 +146,9 @@ export default function TeacherPortalClient({ data }: { data: TeacherPortalPaylo
       } else {
         toast.error('خطأ', res.error || 'تعذر حفظ التسميع');
       }
-    } catch (err: any) {
+    } catch (err) {
       setIsSavingMemo(false);
-      toast.error('خطأ', err.message);
+      toast.error('خطأ', errorMessage(err));
     }
   };
 
@@ -159,7 +167,6 @@ export default function TeacherPortalClient({ data }: { data: TeacherPortalPaylo
     try {
       const res = await sendTeacherNoteToParent({
         student_id: noteStudentId,
-        teacher_id: data.teacher.id,
         category: noteCategory,
         content: noteContent.trim(),
       });
@@ -172,9 +179,9 @@ export default function TeacherPortalClient({ data }: { data: TeacherPortalPaylo
       } else {
         toast.error('خطأ', res.error || 'تعذر إرسال الملاحظة');
       }
-    } catch (err: any) {
+    } catch (err) {
       setIsSendingNote(false);
-      toast.error('خطأ', err.message);
+      toast.error('خطأ', errorMessage(err));
     }
   };
 
@@ -322,18 +329,13 @@ export default function TeacherPortalClient({ data }: { data: TeacherPortalPaylo
 
         {/* Navigation Tabs */}
         <div className="flex items-center gap-2 border-b border-[#E2DBD0] pb-2 overflow-x-auto">
-          {[
-            { id: 'attendance', label: 'التحضير السريع للطلاب', icon: CalendarCheck },
-            { id: 'memorization', label: 'رصد الحفظ والمراجعة', icon: Brain },
-            { id: 'students', label: 'قائمة طلاب الحلقة وأولياء الأمور', icon: Users },
-            { id: 'notes', label: 'إرسال ملاحظة لولي الأمر', icon: MessageSquare },
-          ].map((tab) => {
+          {TEACHER_TABS.map((tab) => {
             const TabIcon = tab.icon;
             const isSelected = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all shrink-0 ${
                   isSelected
                     ? 'bg-charcoal-800 text-white shadow-xs font-bold'
@@ -668,7 +670,7 @@ export default function TeacherPortalClient({ data }: { data: TeacherPortalPaylo
                 </label>
                 <select
                   value={noteCategory}
-                  onChange={(e) => setNoteCategory(e.target.value as any)}
+                  onChange={(e) => setNoteCategory(e.target.value as NoteCategory)}
                   required
                   className="w-full h-11 px-3 rounded-xl border border-[#D5CDC2] bg-white text-charcoal-900 text-sm focus:border-accent focus:ring-1 focus:ring-accent/20"
                 >

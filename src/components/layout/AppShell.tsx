@@ -2,12 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { logoutUser } from '@/lib/actions/auth';
 import {
   Home, Users, ClipboardList, BarChart3,
   Settings, User, LogOut, ChevronDown, ChevronLeft, Menu,
   BookOpen, X, Bell, Search, UserPlus,
   CalendarCheck, Brain, RotateCcw, Star, StickyNote,
-  Building2, UsersRound, GraduationCap, Sparkles
+  Building2, UsersRound, GraduationCap
 } from 'lucide-react';
 
 interface NavItem {
@@ -47,7 +48,13 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export interface ShellUser {
+  name: string;
+  phone: string;
+  role: string;
+}
+
+export const AppShell: React.FC<{ children: React.ReactNode; user: ShellUser }> = ({ children, user }) => {
   const pathname = usePathname();
   const router = useRouter();
   const [isSidebarOpen, setSidebarOpen] = useState(true);
@@ -63,20 +70,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
     });
   }, [pathname]);
 
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
-
-  // Public Landing, Login, and Dedicated Portals render clean without Admin AppShell
-  if (
-    pathname === '/' ||
-    pathname === '/login' ||
-    pathname.startsWith('/login/') ||
-    pathname.startsWith('/parent-portal') ||
-    pathname.startsWith('/teacher-portal')
-  ) {
-    return <>{children}</>;
-  }
+  const closeMobile = () => setMobileOpen(false);
 
   const toggleExpand = (label: string) => {
     if (!isSidebarOpen) setSidebarOpen(true);
@@ -98,12 +92,12 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const gregorianDate = new Intl.DateTimeFormat('ar-SA', { day: 'numeric', month: 'long', year: 'numeric' }).format(today);
   const hijriDate = new Intl.DateTimeFormat('ar-SA-u-ca-islamic', { day: 'numeric', month: 'long', year: 'numeric' }).format(today);
 
-  const SidebarContent = ({ mobile = false }: { mobile?: boolean }) => (
+  const renderSidebar = (mobile = false) => (
     <>
       {/* Brand Header */}
       <div className={`h-16 flex items-center border-b border-white/10 shrink-0 ${mobile ? 'justify-between px-4' : (isSidebarOpen ? 'justify-between px-4' : 'justify-center px-2')}`}>
         {(mobile || isSidebarOpen) && (
-          <Link href="/dashboard" className="flex items-center gap-3 group">
+          <Link href="/dashboard" onClick={mobile ? closeMobile : undefined} className="flex items-center gap-3 group">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-accent to-primary flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
               <BookOpen size={18} className="text-white" />
             </div>
@@ -129,6 +123,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
         <div className="p-3 pb-1">
           <Link
             href="/students/add"
+            onClick={mobile ? closeMobile : undefined}
             className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-gradient-to-l from-accent to-primary text-white font-semibold text-xs hover:opacity-95 transition-all shadow-sm hover:shadow"
           >
             <UserPlus size={15} />
@@ -150,6 +145,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
               {item.href ? (
                 <Link
                   href={item.href}
+                  onClick={mobile ? closeMobile : undefined}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium relative group ${
                     isItemActive
                       ? 'bg-white/15 text-white shadow-sm font-semibold border border-white/10'
@@ -199,6 +195,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                           <Link
                             key={sub.label}
                             href={sub.href}
+                            onClick={mobile ? closeMobile : undefined}
                             className={`flex items-center gap-2.5 py-2 px-3 text-xs rounded-lg transition-all ${
                               isSubActive
                                 ? 'bg-white/20 text-white font-semibold'
@@ -221,19 +218,24 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
       {/* User Profile Footer */}
       <div className="p-3 border-t border-white/10 space-y-1 shrink-0 bg-charcoal-900/90">
-        <Link href="/profile" className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm ${isActive('/profile') ? 'bg-white/15 text-white font-semibold' : 'text-beige-100/75 hover:bg-white/10 hover:text-white'}`}>
+        <Link href="/profile" onClick={mobile ? closeMobile : undefined} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm ${isActive('/profile') ? 'bg-white/15 text-white font-semibold' : 'text-beige-100/75 hover:bg-white/10 hover:text-white'}`}>
           <User size={18} className="shrink-0" />
           {(mobile || isSidebarOpen) && (
             <div className="min-w-0">
-              <span className="block truncate text-sm font-medium leading-none">إدارة النظام</span>
-              <span className="block truncate text-[11px] text-beige-300/50 mt-0.5">admin@khairukum.sa</span>
+              <span className="block truncate text-sm font-medium leading-none">{user.name}</span>
+              <span className="block truncate text-[11px] text-beige-300/50 mt-0.5" dir="ltr">{user.phone}</span>
             </div>
           )}
         </Link>
-        <Link href="/login" className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-semantic-error/20 text-white/70 hover:text-semantic-error transition-all text-xs">
-          <LogOut size={16} className="shrink-0" />
-          {(mobile || isSidebarOpen) && <span>تسجيل الخروج</span>}
-        </Link>
+        <form action={logoutUser}>
+          <button
+            type="submit"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-semantic-error/20 text-white/70 hover:text-semantic-error transition-all text-xs"
+          >
+            <LogOut size={16} className="shrink-0" />
+            {(mobile || isSidebarOpen) && <span>تسجيل الخروج</span>}
+          </button>
+        </form>
       </div>
     </>
   );
@@ -243,7 +245,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
       {/* Desktop Sidebar */}
       <aside className={`bg-charcoal-800 text-white transition-all duration-300 flex-col shrink-0 hidden md:flex shadow-xl z-20 border-s border-white/5 ${isSidebarOpen ? 'w-64' : 'w-[72px]'}`}>
-        <SidebarContent />
+        {renderSidebar()}
       </aside>
 
       {/* Mobile Sidebar Overlay */}
@@ -251,7 +253,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
         <>
           <div className="fixed inset-0 bg-charcoal-900/60 z-40 md:hidden backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
           <aside className="fixed top-0 right-0 h-full w-64 bg-charcoal-800 text-white z-50 flex flex-col md:hidden shadow-2xl">
-            <SidebarContent mobile />
+            {renderSidebar(true)}
           </aside>
         </>
       )}
@@ -288,16 +290,6 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
               <Search size={15} className="absolute top-3 start-3 text-charcoal-400 pointer-events-none" />
             </form>
 
-            {/* Public Site Link */}
-            <Link
-              href="/"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-charcoal-700 hover:text-charcoal-900 hover:bg-[#F2ECE0] transition-colors border border-[#E2DBD0]"
-              title="زيارة الواجهة الرئيسية للموقع"
-            >
-              <Home size={14} />
-              <span>الموقع العام</span>
-            </Link>
-
             {/* Quick Students Link */}
             <Link
               href="/students"
@@ -330,10 +322,10 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
             {/* Admin Avatar */}
             <div className="flex items-center gap-2 ps-2 border-s border-[#E2DBD0]">
               <div className="w-8 h-8 rounded-full bg-beige-200 text-primary flex items-center justify-center font-bold text-xs border border-beige-300">
-                م
+                {user.name?.charAt(0) || 'م'}
               </div>
               <div className="hidden xl:block text-start leading-tight">
-                <span className="block text-xs font-bold text-charcoal-800">مدير النظام</span>
+                <span className="block text-xs font-bold text-charcoal-800">{user.name}</span>
                 <span className="block text-[10px] text-charcoal-500">مشرف عام</span>
               </div>
             </div>

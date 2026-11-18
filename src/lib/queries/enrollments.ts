@@ -1,5 +1,5 @@
 import { cache } from 'react';
-import { query, queryOne } from '@/lib/db';
+import { query } from '@/lib/db';
 
 export type EnrollmentRow = {
   id: string;

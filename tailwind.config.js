@@ -58,8 +58,8 @@ module.exports = {
         }
       },
       fontFamily: {
-        sans: ['"Cairo"', '"Tajawal"', 'sans-serif'],
-        quran: ['"Amiri Quran"', '"Amiri"', 'serif'],
+        sans: ['var(--font-cairo)', '"Cairo"', '"Tajawal"', 'sans-serif'],
+        quran: ['var(--font-amiri-quran)', '"Amiri Quran"', 'var(--font-amiri)', '"Amiri"', 'serif'],
       },
       boxShadow: {
         'card': '0 4px 12px -2px rgba(36, 41, 47, 0.05), 0 2px 6px -1px rgba(36, 41, 47, 0.03)',
