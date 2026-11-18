@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
+import HeroBackdrop from '@/components/landing/HeroBackdrop';
+import SectionBackdrop from '@/components/landing/SectionBackdrop';
 import { loginUser } from '@/lib/actions/auth';
 import { errorMessage } from '@/lib/logger';
 
@@ -278,7 +280,8 @@ export default function LandingPageClient({
       </header>
 
       {/* 2. Hero Section */}
-      <section className="relative overflow-hidden pt-12 pb-20 md:py-24">
+      <section className="relative isolate overflow-hidden pt-12 pb-20 md:py-24">
+        <HeroBackdrop />
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-beige-100 text-charcoal-800 border border-beige-300 text-xs font-bold mb-6 shadow-xs">
@@ -340,7 +343,7 @@ export default function LandingPageClient({
               return (
                 <div
                   key={i}
-                  className="bg-[#FCFBF9] p-5 rounded-2xl border border-[#E2DBD0] text-start flex flex-col justify-between hover:border-beige-400 transition-all shadow-card hover:shadow-card-hover hover:-translate-y-0.5"
+                  className="bg-[#FCFBF9]/90 backdrop-blur-sm p-5 rounded-2xl border border-[#E2DBD0] text-start flex flex-col justify-between hover:border-beige-400 transition-all shadow-card hover:shadow-card-hover hover:-translate-y-0.5"
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold text-charcoal-500">{st.label}</span>
@@ -360,8 +363,9 @@ export default function LandingPageClient({
       </section>
 
       {/* 3. Core Services Section */}
-      <section id="services" className="py-20 relative border-t border-[#E2DBD0]">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section id="services" className="py-20 relative isolate overflow-hidden border-t border-[#E2DBD0]">
+        <SectionBackdrop id="services" mode="arches" />
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative">
           <div className="text-center max-w-2xl mx-auto mb-14">
             <span className="text-xs font-bold text-primary bg-beige-100 px-4 py-1.5 rounded-full border border-beige-300">
               الخدمات الأساسية
@@ -407,8 +411,12 @@ export default function LandingPageClient({
       </section>
 
       {/* 4. Core Benefits Section */}
-      <section id="benefits" className="py-20 relative border-t border-[#E2DBD0] bg-[#FAF8F5]/60">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section
+        id="benefits"
+        className="py-20 relative isolate overflow-hidden border-t border-[#E2DBD0] bg-[#FAF8F5]/60"
+      >
+        <SectionBackdrop id="benefits" mode="lattice" flip />
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative">
           <div className="text-center max-w-2xl mx-auto mb-14">
             <span className="text-xs font-bold text-primary bg-beige-100 px-4 py-1.5 rounded-full border border-beige-300">
               الأثر والفوائد
@@ -447,8 +455,9 @@ export default function LandingPageClient({
       </section>
 
       {/* 5. Role-Based Portals */}
-      <section id="portals" className="py-20 relative border-t border-[#E2DBD0]">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section id="portals" className="py-20 relative isolate overflow-hidden border-t border-[#E2DBD0]">
+        <SectionBackdrop id="portals" mode="three-arches" />
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 relative">
           <div className="text-center max-w-2xl mx-auto mb-14">
             <span className="text-xs font-bold text-primary bg-beige-100 px-4 py-1.5 rounded-full border border-beige-300">
               بوابات الدخول للمصرح لهم
@@ -532,7 +541,8 @@ export default function LandingPageClient({
       </section>
 
       {/* 6. Footer */}
-      <footer className="bg-charcoal-900 text-beige-200 py-10 border-t border-charcoal-800 text-xs">
+      <footer className="relative overflow-hidden bg-charcoal-900 text-beige-200 py-10 border-t border-charcoal-800 text-xs">
+        <SectionBackdrop id="footer" mode="strip" />
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-accent text-white font-black flex items-center justify-center">
