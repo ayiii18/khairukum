@@ -1,4 +1,5 @@
 import LandingPageClient from './LandingPageClient';
+import { safeNextPath } from '@/lib/auth/token';
 import { getPublicStats } from '@/lib/queries/stats';
 
 export const dynamic = 'force-dynamic';
@@ -13,10 +14,7 @@ export default async function HomePage({
   const rawNext = Array.isArray(params.next) ? params.next[0] : params.next;
   // Only allow same-site absolute paths, else the login form could be used as
   // an open redirect.
-  const nextPath =
-    rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')
-      ? rawNext
-      : null;
+  const nextPath = safeNextPath(rawNext);
 
   return (
     <LandingPageClient

@@ -50,18 +50,18 @@ export async function recordLoginAttempt(options: {
 }): Promise<void> {
   try {
     const ip = await currentIp();
+    // A data-modifying CTE appends the attempt and prunes old rows in a single
+    // database round-trip, instead of two sequential queries on every login.
     await query(
-      `INSERT INTO login_audit (phone, ip, user_id, success, reason)
-       VALUES ($1, $2, $3, $4, $5)`,
+      `WITH logged AS (
+         INSERT INTO login_audit (phone, ip, user_id, success, reason)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id
+       )
+       DELETE FROM login_audit
+       WHERE created_at < NOW() - INTERVAL '30 days'`,
       [options.phone, ip, options.userId ?? null, options.success, options.reason ?? null]
     );
-
-    if (options.success) {
-      // Opportunistic retention cleanup.
-      await query(
-        `DELETE FROM login_audit WHERE created_at < NOW() - INTERVAL '30 days'`
-      );
-    }
   } catch (error) {
     logger.warn('rate-limit.record-failed', {
       message: error instanceof Error ? error.message : String(error),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   homeForRole,
+  safeNextPath,
   signSession,
   verifySessionToken,
   type SessionPayload,
@@ -69,5 +70,22 @@ describe('homeForRole', () => {
     expect(homeForRole('TEACHER')).toBe('/teacher-portal');
     expect(homeForRole('PARENT')).toBe('/parent-portal');
     expect(homeForRole('STUDENT')).toBe('/unauthorized');
+  });
+});
+
+describe('safeNextPath', () => {
+  it('keeps same-origin absolute paths', () => {
+    expect(safeNextPath('/students/add')).toBe('/students/add');
+    expect(safeNextPath('/profile?change=1')).toBe('/profile?change=1');
+  });
+
+  it('rejects off-site and malformed destinations', () => {
+    expect(safeNextPath(null)).toBeNull();
+    expect(safeNextPath('')).toBeNull();
+    expect(safeNextPath('https://evil.example')).toBeNull();
+    expect(safeNextPath('students')).toBeNull();
+    expect(safeNextPath('//evil.example')).toBeNull();
+    expect(safeNextPath('/\\evil.example')).toBeNull();
+    expect(safeNextPath('/students\n//evil.example')).toBeNull();
   });
 });

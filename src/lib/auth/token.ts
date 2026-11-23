@@ -15,6 +15,15 @@ export interface SessionPayload {
 export const SESSION_COOKIE = 'khairukum_session';
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
+/** Only allow same-origin absolute paths as a post-login destination. */
+export function safeNextPath(value: string | null | undefined): string | null {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
+  // Browsers treat backslashes and control characters as separators in
+  // special URLs, so "/\evil.com" must not become an off-site redirect.
+  if (/[\\\u0000-\u001F\u007F]/.test(value)) return null;
+  return value;
+}
+
 function getSecret(): Uint8Array {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < 32) {

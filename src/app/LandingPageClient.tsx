@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   BookOpen,
   Building2,
@@ -48,7 +47,6 @@ export default function LandingPageClient({
   initialLoginOpen: boolean;
   initialNextPath?: string | null;
 }) {
-  const router = useRouter();
   const toast = useToast();
 
   // Modal & Mobile Menu States
@@ -99,37 +97,25 @@ export default function LandingPageClient({
     formData.append('phone', phone.trim());
     formData.append('password', password);
     formData.append('role', activeRole);
+    formData.append('next', nextPath || '');
 
     try {
+      // On success the action redirects from the server, so the framework
+      // navigates in the same round-trip. The spinner stays visible until then.
       const res = await loginUser(formData);
 
       if (!res.success) {
         setIsLoggingIn(false);
         setLoginError(res.error || 'تعذر تسجيل الدخول');
         toast.error('خطأ في تسجيل الدخول', res.error);
-        return;
       }
-
-      toast.success(
-        'مرحباً بك!',
-        `تم تسجيل الدخول بنجاح بصفتك: ${res.user?.name || 'مستخدم النظام'}`
-      );
-      setIsLoginModalOpen(false);
-
-      const target =
-        nextPath && nextPath.startsWith('/') && !nextPath.startsWith('//')
-          ? nextPath
-          : res.redirectTo || '/dashboard';
-      setNextPath(null);
-
-      setTimeout(() => {
-        router.push(target);
-      }, 400);
     } catch (err) {
-      const message = errorMessage(err);
+      // A successful server-side redirect may surface as a control-flow
+      // exception; the router handles the navigation, so do not show an error.
+      if (errorMessage(err).includes('NEXT_REDIRECT')) return;
       setIsLoggingIn(false);
-      setLoginError(message || 'حدث خطأ غير متوقع');
-      toast.error('خطأ غير متوقع', message);
+      setLoginError(errorMessage(err) || 'حدث خطأ غير متوقع');
+      toast.error('خطأ غير متوقع', errorMessage(err));
     }
   };
 
@@ -705,10 +691,11 @@ export default function LandingPageClient({
                   type="submit"
                   variant="primary"
                   isLoading={isLoggingIn}
+                  loadingText="جارٍ تسجيل الدخول والتحويل..."
                   disabled={isLoggingIn}
                   className="w-full !h-12 !rounded-xl font-bold !text-sm shadow-sm mt-3"
                 >
-                  {isLoggingIn ? 'جاري التحقق من الصلاحيات...' : 'تأكيد ودخول المنصة'}
+                  تأكيد ودخول المنصة
                 </Button>
               </form>
 

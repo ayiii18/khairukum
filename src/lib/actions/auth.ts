@@ -9,7 +9,12 @@ import {
   readSession,
   requireSessionForAction,
 } from '@/lib/auth/session';
-import { homeForRole, type Role, type SessionPayload } from '@/lib/auth/token';
+import {
+  homeForRole,
+  safeNextPath,
+  type Role,
+  type SessionPayload,
+} from '@/lib/auth/token';
 import { logger, errorMessage } from '@/lib/logger';
 import { redirect } from 'next/navigation';
 
@@ -50,49 +55,55 @@ export async function loginUser(formData: FormData): Promise<LoginResult> {
     };
   }
 
+  let destination = '/dashboard';
+
   try {
-    const user = await queryOne<{
+    // One round-trip instead of three sequential ones (user lookup, bcrypt
+    // check, linked profile). The CASE keeps timing uniform for unknown phone
+    // numbers by burning a dummy hash, so accounts cannot be enumerated.
+    const account = await queryOne<{
       id: string;
       phone: string;
-      password_hash: string;
       role: Role;
       is_active: boolean;
       must_change_password: boolean;
+      valid: boolean;
+      teacher_id: string | null;
+      teacher_name: string | null;
+      parent_id: string | null;
+      parent_name: string | null;
     }>(
-      `SELECT id, phone, password_hash, role, is_active,
-              COALESCE(must_change_password, FALSE) AS must_change_password
-       FROM users
-       WHERE phone = $1`,
-      [phone]
+      `SELECT
+         u.id, u.phone, u.role, u.is_active,
+         COALESCE(u.must_change_password, FALSE) AS must_change_password,
+         CASE
+           WHEN u.id IS NULL
+             THEN (crypt($2, gen_salt('bf')) = crypt($2, gen_salt('bf')))
+           ELSE (u.password_hash = crypt($2, u.password_hash))
+         END AS valid,
+         t.id AS teacher_id, t.full_name AS teacher_name,
+         p.id AS parent_id, p.full_name AS parent_name
+       FROM (SELECT 1) AS seed
+       LEFT JOIN users u ON u.phone = $1
+       LEFT JOIN teachers t ON t.user_id = u.id
+       LEFT JOIN parents p ON p.user_id = u.id`,
+      [phone, password]
     );
 
-    // Always run a hash comparison to keep response timing uniform, even when
-    // the phone number is unknown (prevents user enumeration by timing).
-    const check = user
-      ? await queryOne<{ valid: boolean }>(
-          `SELECT (password_hash = crypt($2, password_hash)) AS valid
-           FROM users WHERE id = $1`,
-          [user.id, password]
-        )
-      : await queryOne<{ valid: boolean }>(
-          `SELECT (crypt($1, gen_salt('bf')) = crypt($1, gen_salt('bf'))) AS valid`,
-          [password]
-        );
-
-    if (!user || !check?.valid) {
+    if (!account?.id || !account.valid) {
       await recordLoginAttempt({
         phone,
-        userId: user?.id ?? null,
+        userId: account?.id ?? null,
         success: false,
-        reason: user ? 'BAD_PASSWORD' : 'UNKNOWN_PHONE',
+        reason: account?.id ? 'BAD_PASSWORD' : 'UNKNOWN_PHONE',
       });
       return { success: false, error: 'رقم الهاتف أو كلمة المرور غير صحيحة.' };
     }
 
-    if (!user.is_active) {
+    if (!account.is_active) {
       await recordLoginAttempt({
         phone,
-        userId: user.id,
+        userId: account.id,
         success: false,
         reason: 'INACTIVE',
       });
@@ -102,16 +113,16 @@ export async function loginUser(formData: FormData): Promise<LoginResult> {
       };
     }
 
-    if (targetRole && user.role !== targetRole) {
+    if (targetRole && account.role !== targetRole) {
       await recordLoginAttempt({
         phone,
-        userId: user.id,
+        userId: account.id,
         success: false,
         reason: 'ROLE_MISMATCH',
       });
       return {
         success: false,
-        error: `هذا الحساب مسجل بصفة (${ROLE_NAMES[user.role] || user.role}). يرجى اختيار التبويب المطابق لصلاحيتك.`,
+        error: `هذا الحساب مسجل بصفة (${ROLE_NAMES[account.role] || account.role}). يرجى اختيار التبويب المطابق لصلاحيتك.`,
       };
     }
 
@@ -119,67 +130,54 @@ export async function loginUser(formData: FormData): Promise<LoginResult> {
     let teacherId: string | undefined;
     let parentId: string | undefined;
 
-    if (user.role === 'ADMIN') {
+    if (account.role === 'ADMIN') {
       displayName = 'مدير النظام';
-    } else if (user.role === 'TEACHER') {
-      const teacher = await queryOne<{ id: string; full_name: string }>(
-        `SELECT id, full_name FROM teachers WHERE user_id = $1`,
-        [user.id]
-      );
-      if (!teacher) {
+    } else if (account.role === 'TEACHER') {
+      if (!account.teacher_id || !account.teacher_name) {
         return { success: false, error: 'لا يوجد ملف معلم مرتبط بهذا الحساب. تواصل مع الإدارة.' };
       }
-      displayName = teacher.full_name;
-      teacherId = teacher.id;
-    } else if (user.role === 'PARENT') {
-      const parent = await queryOne<{ id: string; full_name: string }>(
-        `SELECT id, full_name FROM parents WHERE user_id = $1`,
-        [user.id]
-      );
-      if (!parent) {
+      displayName = account.teacher_name;
+      teacherId = account.teacher_id;
+    } else if (account.role === 'PARENT') {
+      if (!account.parent_id || !account.parent_name) {
         return { success: false, error: 'لا يوجد ملف ولي أمر مرتبط بهذا الحساب. تواصل مع الإدارة.' };
       }
-      displayName = parent.full_name;
-      parentId = parent.id;
+      displayName = account.parent_name;
+      parentId = account.parent_id;
     }
 
     const payload: SessionPayload = {
-      userId: user.id,
-      role: user.role,
+      userId: account.id,
+      role: account.role,
       name: displayName,
-      phone: user.phone,
+      phone: account.phone,
       teacherId,
       parentId,
-      mustChangePassword: user.must_change_password,
+      mustChangePassword: account.must_change_password,
     };
 
-    await setSessionCookie(payload);
+    // Independent writes — run them concurrently so the browser gets the
+    // session cookie and the client can navigate as soon as possible.
+    await Promise.all([
+      setSessionCookie(payload),
+      query(
+        `UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        [account.id]
+      ),
+      recordLoginAttempt({
+        phone,
+        userId: account.id,
+        success: true,
+        reason: 'OK',
+      }),
+    ]);
 
-    await query(
-      `UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1`,
-      [user.id]
-    );
-    await recordLoginAttempt({
-      phone,
-      userId: user.id,
-      success: true,
-      reason: 'OK',
-    });
-
-    return {
-      success: true,
-      user: {
-        id: user.id,
-        phone: user.phone,
-        role: user.role,
-        name: displayName,
-        teacherId,
-        parentId,
-      },
-      redirectTo: user.must_change_password
-        ? '/profile?change=1'
-        : homeForRole(user.role),
-    };
+    // An optional protected destination (e.g. /students/add) wins over the
+    // role home, but only after server-side validation.
+    const requested = safeNextPath(formData.get('next')?.toString());
+    destination = account.must_change_password
+      ? '/profile?change=1'
+      : (requested ?? homeForRole(account.role));
   } catch (error) {
     logger.error('auth.login-failed', { message: errorMessage(error) });
     return {
@@ -187,6 +185,11 @@ export async function loginUser(formData: FormData): Promise<LoginResult> {
       error: 'حدث خطأ غير متوقع أثناء معالجة تسجيل الدخول. يرجى المحاولة لاحقاً.',
     };
   }
+
+  // Redirect from the action itself: Next.js streams the destination's RSC
+  // payload in the same response, so the router performs a single navigation
+  // instead of re-rendering the current route and then navigating again.
+  redirect(destination);
 }
 
 export async function logoutUser(): Promise<void> {
